@@ -1,0 +1,396 @@
+---
+title: "Advanced Satts"
+author: "Vivek Bhat Hosmat/Deepika Jantz"
+date: "November 24, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#loading all the required libraries
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(reshape2)
+library(ggmap)
+library(knitr)
+library(stringr)
+library(zoo)
+
+```
+
+
+
+
+```{r}
+#Gun violenece data
+
+gun_rawdata<-fread("gun-violence-data_01-2013_03-2018.csv")
+
+head(gun_rawdata)
+
+gun_rawdata %>%
+  distinct(state)
+  
+
+```
+
+
+```{r}
+
+city_count <- gun_rawdata %>%
+  group_by(state,city_or_county) %>%
+  count(city_or_county) 
+
+
+
+```
+
+
+```{r}
+#Population data
+
+population_data <- fread("popEstimate.csv")
+
+head(population_data)
+
+#Selecting the growth in population(estimates) between 2014 and 2017
+
+population_growth <- population_data %>%
+  select(STATE,NAME,NPOPCHG_2014,NPOPCHG_2015,NPOPCHG_2016,NPOPCHG_2017,PPOPCHG_2014,PPOPCHG_2015,PPOPCHG_2016,PPOPCHG_2017 )
+
+population_growth_rawdata <- population_growth %>%
+  select(NAME,"2014" = NPOPCHG_2014,"2015"=NPOPCHG_2015,"2016"=NPOPCHG_2016,"2017"=NPOPCHG_2017)
+
+population_growth_percentile <- population_growth %>%
+  select(NAME,"2014"=PPOPCHG_2014,"2015"=PPOPCHG_2015,"2016"=PPOPCHG_2016,"2017"=PPOPCHG_2017)
+
+#population
+population1_rawdata <- population_data %>%
+  select(NAME,"2014" = POPESTIMATE2014,"2015"=POPESTIMATE2015,"2016"=POPESTIMATE2016,"2017"=POPESTIMATE2017)
+
+
+```
+
+
+```{r}
+
+melted_pop_growth<-melt(population_growth_rawdata, id.vars=c("NAME"))
+
+ggplot(melted_pop_growth, aes(variable,value,group=NAME, color=NAME)) + geom_line()
+
+
+```
+
+
+
+```{r}
+
+melted_pop_percentile_growth<-melt(population_growth_percentile, id.vars=c("NAME"))
+
+ggplot(melted_pop_percentile_growth, aes(variable,value,group=NAME, color=NAME)) + geom_point()
+
+
+```
+
+
+```{r}
+#Most populated states are California and Texas
+
+most_pop <-melted_pop_percentile_growth %>%
+  filter(NAME=="California")
+
+#Least populated states are Wyoming and Vermont
+
+least_pop <- melted_pop_percentile_growth %>%
+  filter(NAME=="Wyoming")
+
+
+ggplot(most_pop, aes(variable,value,group=NAME))+ geom_line()  
+  # geom_line(least_pop, mapping = variable,value)
+
+```
+
+
+```{r}
+#How does the gun violations vary with the population of the state? Our assumption to start with is,Higher population will have higher gun violations.
+
+#Linear regression
+
+head(population_growth_rawdata)
+
+population_growth_rawdata$`2014`<-round(rank(population_growth_rawdata$`2014`)/length(population_growth_rawdata$`2014`),2)
+population_growth_rawdata$`2015`<-round(rank(population_growth_rawdata$`2015`)/length(population_growth_rawdata$`2015`),2)
+population_growth_rawdata$`2016`<-round(rank(population_growth_rawdata$`2016`)/length(population_growth_rawdata$`2016`),2)
+population_growth_rawdata$`2017`<-round(rank(population_growth_rawdata$`2017`)/length(population_growth_rawdata$`2017`),2)
+
+
+head(population_growth_rawdata)
+
+pop_growth_percentile <- melt(population_growth_rawdata,id.vars="NAME", variable.name = "Year", value.name ="Growth" )
+  
+head(pop_growth_percentile)
+
+names(pop_growth_percentile)[1] <-"state"
+
+
+
+
+head(gun_rawdata)
+
+
+gun_rawdata$date <- as.Date(gun_rawdata$date)
+
+
+
+
+
+gun_data_formatted <-gun_rawdata %>%
+  group_by("Year"=year(date),state)%>%
+  select(Year,state,n_killed,n_injured) %>%
+  filter(Year>2013 & Year<2018) %>%
+  summarize("Total_killed"=sum(n_killed),"Total_injured"=sum(n_injured))
+
+  
+head(gun_data_formatted)
+
+gun_data_formatted$Year <- as.factor(gun_data_formatted$Year)
+
+
+combined_data <- merge(pop_growth_percentile,gun_data_formatted, by=c("Year","state"))
+
+head(combined_data)
+
+
+
+#linear regression of growth vs number of injured
+lm_population <- lm(Total_injured~Growth,combined_data)
+
+plot(lm_population)
+
+
+summary(lm_population)
+
+
+#logistic regression of growth vs number of injured
+
+log_population <- lm(Total_injured~log(Growth),combined_data)
+
+plot(log_population)
+
+summary(log_population)
+
+#log of injured
+log_injured <- lm(log(Total_injured)~Growth,combined_data)
+
+plot(log_injured)
+
+summary(log_injured)
+
+
+#poly --quadratic
+
+lm__poly_population <- lm(Total_injured~poly(Growth,2),combined_data)
+
+plot(lm__poly_population)
+
+
+summary(lm__poly_population)
+
+
+
+
+```
+
+
+Analysis on population data
+```{r}
+
+head(population1_rawdata)
+
+population1_rawdata$`2014`<-round(rank(population1_rawdata$`2014`)/length(population1_rawdata$`2014`),2)
+population1_rawdata$`2015`<-round(rank(population1_rawdata$`2015`)/length(population1_rawdata$`2015`),2)
+population1_rawdata$`2016`<-round(rank(population1_rawdata$`2016`)/length(population1_rawdata$`2016`),2)
+population1_rawdata$`2017`<-round(rank(population1_rawdata$`2017`)/length(population1_rawdata$`2017`),2)
+
+
+head(population1_rawdata)
+
+pop_percentile <- melt(population1_rawdata,id.vars="NAME", variable.name = "Year", value.name ="Population" )
+  
+head(pop_percentile)
+
+names(pop_percentile)[1] <-"state"
+
+
+
+
+head(gun_rawdata)
+
+
+gun_rawdata$date <- as.Date(gun_rawdata$date)
+
+
+
+
+
+gun_data_formatted <-gun_rawdata %>%
+  group_by("Year"=year(date),state)%>%
+  select(Year,state,n_killed,n_injured) %>%
+  filter(Year>2013 & Year<2018) %>%
+  summarize("Total_killed"=sum(n_killed),"Total_injured"=sum(n_injured))
+
+  
+head(gun_data_formatted)
+
+gun_data_formatted$Year <- as.factor(gun_data_formatted$Year)
+
+
+combined_data1 <- merge(pop_percentile,gun_data_formatted, by=c("Year","state"))
+
+head(combined_data1)
+
+
+
+#linear regression of growth vs number of injured
+lm_population <- lm(Total_injured~Population,combined_data1)
+
+plot(lm_population)
+
+
+summary(lm_population)
+
+
+#logistic regression of growth vs number of injured
+
+log_population <- lm(Total_injured~log(Population),combined_data1)
+
+plot(log_population)
+
+summary(log_population)
+
+#log of injured
+log_injured <- lm(log(Total_injured)~Population,combined_data1)
+
+plot(log_injured)
+
+summary(log_injured)
+
+
+#poly --quadratic
+
+lm_poly_population <- lm(Total_injured~poly(Population,2),combined_data1)
+
+plot(lm_poly_population)
+
+
+summary(lm__poly_population)
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+```{r}
+pop_growth_top<-population_growth_rawdata %>%
+  arrange(desc(population_growth_rawdata$`2017`))
+
+
+a<- population_growth_rawdata %>%
+  filter(NAME=="California")
+
+ab<-melt(a,vars.id=a$NAME)
+
+top.list <- dplyr::pull(ab,3)
+  
+
+pop_growth_least <- population_growth_rawdata %>%
+  filter(NAME=="Wyoming")
+
+least<- melt(pop_growth_least,vars.id=NAME)
+
+bottom.list<- dplyr::pull(least,3)
+
+(var_hypothesis = var.test(top.list, bottom.list, alternative="two.sided"))
+
+
+```
+
+
+
+
+```{r}
+#Is there a seasonality influence on the number of incidents?
+
+
+
+```
+
+
+```{r}
+#Is there a pattern in the places at which the incidents have taken place?
+
+
+
+```
+
+
+
+
+
+```{r}
+#What are the commonly used guns in the incidents?
+
+
+
+```
+
+
+
+```{r}
+
+
+
+
+```
+
+
+
+
+
+
